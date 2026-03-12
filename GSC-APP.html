@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quadcopter GSC App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide-react@0.378.0/dist/umd/lucide-react.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617; /* Slate 950 */
+            color: #e2e8f0; /* Slate 200 */
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(10, minmax(0, 1fr));
+            gap: 1rem;
+            width: 100vw;
+            height: 100vh;
+            padding: 1rem;
+        }
+        .window-frame {
+            background-color: #0f172a; /* Slate 900 */
+            border: 1px solid #334155; /* Slate 700 */
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .window-header {
+            background-color: #1e293b; /* Slate 800 */
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .window-content {
+            padding: 1rem;
+            flex-grow: 1;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        /* Grid Placement */
+        #video-feed { grid-column: 1 / 9; grid-row: 1 / 7; }
+        #gps-map { grid-column: 1 / 5; grid-row: 7 / 11; }
+        #sensor-data { grid-column: 9 / 13; grid-row: 1 / 6; }
+        #flight-controls { grid-column: 5 / 9; grid-row: 7 / 11; }
+        #mock-console { grid-column: 9 / 13; grid-row: 6 / 11; }
+
+        /* Video Feed Styles */
+        #video-feed .window-content {
+            padding: 0;
+            background-color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        #stream-image, #local-video-player {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #local-video-player {
+            display: none; /* Hidden by default */
+        }
+        
+        .video-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1rem;
+            z-index: 10;
+        }
+
+        /* Play Button Overlay (Fixes Autoplay Issues) */
+        #play-overlay {
+            position: absolute;
+            inset: 0;
+            display: none; /* Hidden by default */
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.6);
+            z-index: 50;
+        }
+
+        .live-indicator {
+            align-self: flex-start;
+            background-color: #dc2626;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            transition: all 0.3s;
+        }
+        .live-indicator.offline {
+            background-color: #ea580c; /* Orange for Local Video Mode */
+        }
+        .live-indicator::before {
+            content: '';
+            width: 0.5rem;
+            height: 0.5rem;
+            background-color: #f87171;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            animation: pulse 1.5s infinite;
+        }
+        .live-indicator.offline::before {
+            background-color: #fed7aa;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* Map Styles */
+        #gps-map .window-content {
+            padding: 0;
+            overflow: hidden;
+        }
+        #google-map-frame {
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+        #map-image-fallback {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none; /* Hidden if Google Maps works */
+        }
+
+        /* Sensor Styles */
+        .sensor-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        .sensor-item:last-child { border-bottom: none; }
+        .sensor-item .value { font-family: 'Courier New', monospace; font-weight: 600; font-size: 1.125rem; }
+
+        /* Console */
+        #mockConsole {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #020617;
+            font-size: 0.875rem;
+            overflow-y: scroll;
+        }
+        .console-log { border-bottom: 1px solid #1e293b; padding: 0.2rem; }
+        .console-log .timestamp { color: #64748b; }
+        .console-log .type-info { color: #60a5fa; }
+        .console-log .type-send { color: #34d399; }
+        .console-log .type-error { color: #f87171; }
+        .console-log .type-sys { color: #facc15; } /* System messages */
+
+        /* IP Search Input */
+        .ip-control {
+            pointer-events: auto; 
+            display: flex; 
+            gap: 0.5rem;
+            background: rgba(15, 23, 42, 0.8);
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-grid">
+        <div id="video-feed" class="window-frame">
+            <div class="window-header">
+                <span>Visual Perception Feed</span>
+                <div class="flex gap-2 text-xs">
+                     <input type="text" id="cam-ip" placeholder="Camera IP (e.g 192.168.x)" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white w-40">
+                     <button onclick="setStreamIP()" class="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded font-medium transition-colors">Set IP</button>
+                </div>
+            </div>
+            <div class="window-content relative">
+                <img id="stream-image" src="" alt="Live Stream" style="display:none;">
+                
+                <video id="local-video-player" loop muted playsinline>
+                    <source src="local_video.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+
+                <div id="placeholder-text" class="absolute inset-0 flex items-center justify-center text-slate-500 flex-col" style="display: flex;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2 opacity-50"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span>Waiting for connection...</span>
+                </div>
+
+                <div id="play-overlay">
+                    <button onclick="forcePlay()" class="bg-blue-600 text-white px-6 py-3 rounded-full font-bold shadow-lg hover:bg-blue-500 transition border border-blue-400">
+                        ▶ Click to Enable Video
+                    </button>
+                </div>
+
+                <div class="video-overlay">
+                    <div class="flex justify-between w-full">
+                        <div id="live-badge" class="live-indicator offline">OFFLINE</div>
+                        <div class="text-xs font-mono bg-black/50 px-2 py-1 rounded border border-slate-600">Mode: <span id="video-mode-text">IDLE</span></div>
+                    </div>
+                    <div class="text-white font-mono text-sm self-start mt-auto">
+                        <div>LAT: 29.3544 N</div>
+                        <div>LON: 71.6911 E</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="sensor-data" class="window-frame">
+            <div class="window-header">Telemetry & Sensor Data</div>
+            <div class="window-content space-y-2">
+                <div class="sensor-item"><span>Altitude:</span> <span class="value text-blue-400">120 m</span></div>
+                <div class="sensor-item"><span>Ground Speed:</span> <span class="value text-blue-400">15 m/s</span></div>
+                <div class="sensor-item"><span>Vertical Speed:</span> <span class="value text-green-400">+1.2 m/s</span></div>
+                <div class="sensor-item"><span>Battery:</span> <span class="value text-green-400">88%</span></div>
+                <div class="sensor-item"><span>Signal Strength:</span> <span class="value text-green-400">95%</span></div>
+                <div class="sensor-item"><span>Flight Time:</span> <span class="value text-yellow-400">08:32</span></div>
+                <div class="sensor-item"><span>GPS Sats:</span> <span class="value text-yellow-400">14</span></div>
+            </div>
+        </div>
+
+        <div id="gps-map" class="window-frame">
+            <div class="window-header">GPS Location (Live)</div>
+            <div class="window-content relative">
+                <iframe 
+                    id="google-map-frame"
+                    src="https://maps.google.com/maps?q=Naran&t=&z=13&ie=UTF8&iwloc=&output=embed"
+                    allowfullscreen>
+                </iframe>
+
+                <img id="map-image-fallback" src="map.jpg" alt="Offline Map">
+                
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                    <div class="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg animate-pulse"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="flight-controls" class="window-frame">
+            <div class="window-header">Manual Flight Controls</div>
+            <div class="window-content text-center flex flex-col items-center justify-center">
+                <h1 class="text-xl font-bold mb-1">Manual Control</h1>
+                <p class="text-slate-400 text-sm mb-4">Use arrow & WASD keys</p>
+                <div id="arrowRepresentation" class="hidden my-2 text-4xl text-blue-400 font-bold min-h-[50px]"></div>
+                <div id="keyValueDisplay" class="text-slate-400 h-6 text-sm"></div>
+                <div class="mt-2">
+                    <label for="speed" class="mr-2 font-medium">Throttle:</label>
+                    <input type="number" id="speed" name="speed" readonly class="w-24 text-center bg-slate-700 border border-slate-600 rounded-md p-1">
+                </div>
+            </div>
+        </div>
+
+        <div id="mock-console" class="window-frame">
+            <div class="window-header">Mission Log & Console</div>
+            <div id="mockConsole" class="window-content p-2"></div>
+        </div>
+    </div>
+
+<script>
+    // --- PART 1: SMART VIDEO & MAP LOGIC ---
+    
+    let currentStreamURL = "http://esp32-cam.local:81/stream"; 
+    let isStreamOnline = false;
+
+    // Detect Video Errors (Debugging)
+    const localVideo = document.getElementById('local-video-player');
+    localVideo.addEventListener('error', function(e) {
+        logToConsole(`Video Error: Could not load local video. Check filename 'local_video.mp4'`, 'error');
+    });
+
+    function setStreamIP() {
+        const ip = document.getElementById('cam-ip').value.trim();
+        if(ip) {
+            currentStreamURL = `http://${ip}:81/stream`;
+            logToConsole(`Target IP updated: ${ip}`, 'sys');
+            checkStreamStatus();
+        }
+    }
+
+    function checkStreamStatus() {
+        const testImg = new Image();
+        testImg.onload = function() {
+            if (!isStreamOnline) switchToLive();
+        };
+        testImg.onerror = function() {
+            // If live stream is dead, ensure local video is active
+            if (isStreamOnline || localVideo.paused || localVideo.style.display === 'none') {
+                if(isStreamOnline) logToConsole("Live stream signal lost!", 'error');
+                switchToLocal();
+            }
+        };
+        // Add timestamp to prevent caching
+        testImg.src = currentStreamURL + "?t=" + new Date().getTime();
+    }
+
+    function switchToLive() {
+        isStreamOnline = true;
+        document.getElementById('stream-image').src = currentStreamURL;
+        document.getElementById('stream-image').style.display = 'block';
+        localVideo.style.display = 'none';
+        localVideo.pause();
+        document.getElementById('placeholder-text').style.display = 'none';
+        document.getElementById('play-overlay').style.display = 'none';
+
+        const badge = document.getElementById('live-badge');
+        badge.classList.remove('offline');
+        badge.innerText = "LIVE FEED";
+        document.getElementById('video-mode-text').innerText = "ESP32-CAM";
+        logToConsole("Live stream connection established.", 'sys');
+    }
+
+    function switchToLocal() {
+        isStreamOnline = false;
+        document.getElementById('stream-image').style.display = 'none';
+        document.getElementById('stream-image').src = "";
+        
+        localVideo.style.display = 'block';
+        document.getElementById('placeholder-text').style.display = 'none';
+
+        // Robust Autoplay Handling
+        var playPromise = localVideo.play();
+        if (playPromise !== undefined) {
+            playPromise.then(_ => {
+                // Autoplay started!
+                document.getElementById('play-overlay').style.display = 'none';
+            })
+            .catch(error => {
+                // Autoplay was prevented. Show the button.
+                console.log("Autoplay prevented by browser.");
+                document.getElementById('play-overlay').style.display = 'flex';
+            });
+        }
+
+        const badge = document.getElementById('live-badge');
+        badge.classList.add('offline');
+        badge.innerText = "LOCAL REPLAY";
+        document.getElementById('video-mode-text').innerText = "OFFLINE - RETRYING";
+    }
+
+    // Manual Play Button Function
+    function forcePlay() {
+        localVideo.play();
+        document.getElementById('play-overlay').style.display = 'none';
+    }
+
+    // Map Logic
+    function updateMapDisplay() {
+        const mapFrame = document.getElementById('google-map-frame');
+        const mapImg = document.getElementById('map-image-fallback');
+        
+        if (navigator.onLine) {
+            mapFrame.style.display = 'block';
+            mapImg.style.display = 'none';
+        } else {
+            mapFrame.style.display = 'none';
+            mapImg.style.display = 'block';
+            logToConsole("Internet unavailable. Switching to offline map.", 'error');
+        }
+    }
+    window.addEventListener('online',  () => { 
+        document.getElementById('google-map-frame').src = document.getElementById('google-map-frame').src; 
+        updateMapDisplay(); 
+    });
+    window.addEventListener('offline', () => { updateMapDisplay(); });
+
+    // Initial Checks
+    setInterval(checkStreamStatus, 3000); // Check every 3 seconds
+    checkStreamStatus();
+    updateMapDisplay();
+
+
+    // --- PART 2: EXACT CONTROL LOGIC (UNCHANGED) ---
+
+    class MockSocket {
+        constructor(url) { this.url = url; setTimeout(() => this.onopen(), 100); }
+        onopen() { logToConsole('Drone connection established.', 'info'); }
+        onclose() { logToConsole('Drone connection lost.', 'error'); }
+        onmessage(event) { logToConsole(`MSG: ${event.data}`, 'info'); }
+        send(data) { logToConsole(`CMD: ${data}`, 'send'); }
+    }
+
+    const mockConsole = document.getElementById('mockConsole');
+
+    function logToConsole(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.classList.add('console-log');
+        logEntry.innerHTML = `<span class="timestamp">${timestamp}</span> <span class="type-${type}">${message}</span>`;
+        mockConsole.appendChild(logEntry);
+        mockConsole.scrollTop = mockConsole.scrollHeight;
+    }
+
+    // --- Controller Logic ---
+    var pressedKeys = [];
+    var speed = 1000;
+    var minSpeed = 1000;
+    var maxSpeed = 2000;
+    var accelerationInterval = null;
+    var decelerationInterval = null;
+    var accelerationRate = 10;
+    var decelerationRate_downkey = 10;
+    var upArrowSpeed = 1000;
+    var currentKeySpeeds = {};
+
+    var socket = new MockSocket('ws://' + window.location.hostname + '/ws');
+
+    document.addEventListener('keydown', function(event) {
+        if (isValidKey(event.keyCode) && !pressedKeys.includes(event.keyCode)) {
+            event.preventDefault();
+            pressedKeys.push(event.keyCode);
+            if (event.keyCode === 38) startAcceleration(true);
+            else if (event.keyCode === 40) startDeceleration(true);
+            else {
+                if (!currentKeySpeeds[event.keyCode]) currentKeySpeeds[event.keyCode] = 0;
+                startAcceleration(false);
+            }
+            displayArrow(getArrowSymbol(pressedKeys));
+            sendCommand();
+        }
+    });
+
+    document.addEventListener('keyup', function(event) {
+        if (pressedKeys.includes(event.keyCode)) {
+            event.preventDefault();
+            const index = pressedKeys.indexOf(event.keyCode);
+            if (index > -1) pressedKeys.splice(index, 1);
+
+            if (event.keyCode === 38) stopAcceleration();
+            else if (event.keyCode === 40) stopDeceleration();
+            else stopDecelerationForKey(event.keyCode);
+
+            if (pressedKeys.length === 0) {
+                hideArrow();
+                sendStopCommand();
+            } else {
+                displayArrow(getArrowSymbol(pressedKeys));
+                sendCommand();
+            }
+            fadeOutKeyValueDisplay();
+        }
+    });
+
+    function isValidKey(keyCode) { return [37, 38, 39, 40, 65, 68, 87, 83].includes(keyCode); }
+
+    function startAcceleration(isUpArrow) {
+        clearInterval(accelerationInterval);
+        accelerationInterval = setInterval(() => {
+            const keyCodeToAccelerate = isUpArrow ? 38 : pressedKeys.find(key => ![38, 40].includes(key));
+            if (isUpArrow) {
+                if (upArrowSpeed < maxSpeed) upArrowSpeed = Math.min(maxSpeed, upArrowSpeed + accelerationRate);
+            } else if(keyCodeToAccelerate !== undefined) {
+                 if (currentKeySpeeds[keyCodeToAccelerate] < maxSpeed) {
+                    currentKeySpeeds[keyCodeToAccelerate] = Math.min(maxSpeed, currentKeySpeeds[keyCodeToAccelerate] + accelerationRate);
+                }
+            }
+            updateCombinedSpeed();
+        }, 100);
+    }
+
+    function startDeceleration(isDownArrow) {
+        clearInterval(decelerationInterval);
+        decelerationInterval = setInterval(() => {
+            if (isDownArrow) {
+                if (upArrowSpeed > minSpeed) upArrowSpeed = Math.max(minSpeed, upArrowSpeed - decelerationRate_downkey);
+                updateCombinedSpeed();
+            }
+        }, 100);
+    }
+    
+    function updateCombinedSpeed() {
+        speed = Math.min(maxSpeed, upArrowSpeed + getCurrentKeySpeedsSum());
+        updateSpeedInput();
+        const activeKey = pressedKeys.find(key => ![38, 40].includes(key));
+        if (activeKey) displayKeyValue(upArrowSpeed, currentKeySpeeds[activeKey] || 0, speed);
+        else displayKeyValue(upArrowSpeed, 0, speed);
+        sendCommand();
+    }
+    
+    function stopAcceleration() { clearInterval(accelerationInterval); }
+    function stopDeceleration() { clearInterval(decelerationInterval); }
+    function getCurrentKeySpeedsSum() { return Object.values(currentKeySpeeds).reduce((a, b) => a + b, 0); }
+
+    function stopDecelerationForKey(keyCode) {
+        clearInterval(decelerationInterval);
+        const intervalId = setInterval(() => {
+            if (currentKeySpeeds[keyCode] > 0) {
+                currentKeySpeeds[keyCode] = Math.max(0, currentKeySpeeds[keyCode] - 100); // Faster deceleration on key up
+                updateCombinedSpeed();
+            } else {
+                clearInterval(intervalId);
+            }
+        }, 100);
+    }
+
+    function updateSpeedInput() { document.getElementById("speed").value = speed; }
+
+    function getArrowSymbol(keyCodes) {
+        const symbols = { 37: "←", 38: "↑", 39: "→", 40: "↓", 65: "YAW-L", 68: "YAW-R", 87: "FWD", 83: "BWD" };
+        return keyCodes.map(kc => symbols[kc] || "").join(" ");
+    }
+
+    function displayArrow(symbol) {
+        const arrowElement = document.getElementById('arrowRepresentation');
+        arrowElement.innerHTML = symbol;
+        arrowElement.classList.remove('hidden');
+    }
+
+    function hideArrow() { document.getElementById('arrowRepresentation').classList.add('hidden'); }
+
+    function displayKeyValue(base, added, total) {
+        const el = document.getElementById('keyValueDisplay');
+        el.innerHTML = `Base: ${base} + Add: ${added} = ${total}`;
+        el.style.opacity = 1;
+    }
+
+    function fadeOutKeyValueDisplay() {
+        document.getElementById('keyValueDisplay').style.opacity = 0;
+    }
+
+    function sendCommand() {
+        const commands = { 37: "Roll Left", 38: "Throttle Up", 39: "Roll Right", 40: "Throttle Down", 65: "Yaw Left", 68: "Yaw Right", 87: "Pitch Forward", 83: "Pitch Backward" };
+        const commandStr = pressedKeys.map(kc => commands[kc]).filter(Boolean).join(", ");
+        if (!commandStr) return;
+        const totalSpeed = Math.min(maxSpeed, upArrowSpeed + getCurrentKeySpeedsSum());
+        socket.send(`${commandStr},${totalSpeed},${upArrowSpeed}`);
+    }
+
+    function sendStopCommand() {
+        Object.keys(currentKeySpeeds).forEach(k => currentKeySpeeds[k] = 0);
+        upArrowSpeed = minSpeed;
+        speed = minSpeed;
+        updateSpeedInput();
+        socket.send("Stop");
+    }
+    
+    updateSpeedInput(); // Initialize
+</script>
+</body>
+</html>
