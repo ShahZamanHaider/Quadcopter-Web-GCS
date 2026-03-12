@@ -14,6 +14,8 @@ This is a lightweight single file, browser-based Ground Control Station (GCS) de
 
 Moreover heavy desktop apps like Mission Planner are great, but sometimes you need a fast, custom dashboard that anyone can open on a field laptop without installing software. And to build complex app on basic codebase This mini app is great for getting started. It serves as the frontend UI and the manual control logic layer. Right now, the telemetry and connection are mocked, but the architecture is ready to get live IP camera feeds and WebSocket telemetry from an onboard companion computer (like an ESP32 or Raspberry Pi).
 
+You can replace dummy drone video feed and map image with your custom one, its only purpose is to show when drone is offline or when connection is not established. Remeber to not change the name of files.
+
 ## ⚙️ Core Features
 
 * **IP Camera Integration:** Built specifically to handle direct MJPEG streams (like from an ESP32-CAM). Just punch the IP address into the top bar, and get feed updates.
